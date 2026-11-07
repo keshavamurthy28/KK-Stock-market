@@ -10,7 +10,6 @@ st.write(
     "actionable Buy/Sell levels, sets stop-losses, and analyzes the catalyst behind the surge."
 )
 
-# Sidebar Configuration for Market Universe & Thresholds
 st.sidebar.header("⚙️ Scanner Controls")
 universe_choice = st.sidebar.selectbox(
     "Select Stock Universe", ["Nifty 50 Core", "Nifty 500 (Extended Universe)"]
@@ -51,15 +50,16 @@ if st.button("🚀 Run Market-Wide Volume Scan"):
         status_text.text(f"Scanning {ticker} ({idx + 1}/{total_stocks})...")
         progress_bar.progress((idx + 1) / total_stocks)
         try:
-            # Fetch historical data with auto_adjust=True for clean price scaling
             hist = yf.download(ticker, period="2mo", progress=False, auto_adjust=True)
             
-            # Flatten multi-index columns if returned by yfinance
+            # Robust flattening of multi-index columns
             if isinstance(hist.columns, pd.MultiIndex):
-                hist.columns = hist.columns.get_level_values(0)
+                hist.columns = [col[0] for col in hist.columns]
+            
+            # Ensure columns are standard strings
+            hist.columns = [str(c).strip() for c in hist.columns]
 
-            if len(hist) >= 30:
-                # Calculate baseline 30-day average volume (excluding current session)
+            if len(hist) >= 30 and "Volume" in hist.columns and "Close" in hist.columns:
                 avg_vol_30d = float(hist["Volume"].iloc[-30:-1].mean())
                 latest_vol = float(hist["Volume"].iloc[-1])
                 
@@ -67,14 +67,13 @@ if st.button("🚀 Run Market-Wide Volume Scan"):
                 prev_close = float(hist["Close"].iloc[-2])
                 price_change_pct = ((latest_close - prev_close) / prev_close) * 100
 
-                # Calculate True Range & ATR for stop-loss
+                # Calculate ATR safely
                 high_low = hist["High"] - hist["Low"]
                 high_close = abs(hist["High"] - hist["Close"].shift())
                 low_close = abs(hist["Low"] - hist["Close"].shift())
                 true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
                 atr = float(true_range.iloc[-14:].mean())
 
-                # Check if volume crosses the surge threshold
                 if latest_vol >= (avg_vol_30d * volume_multiplier):
                     surge_ratio = round(latest_vol / avg_vol_30d, 2)
 
@@ -104,7 +103,7 @@ if st.button("🚀 Run Market-Wide Volume Scan"):
                         "Target (₹)": target,
                         "Why Volume Surged (Catalyst)": catalyst,
                     })
-        except Exception:
+        except Exception as e:
             continue
 
     progress_bar.empty()
